@@ -14,7 +14,59 @@ import { ExportDialog } from './components/ExportDialog';
 import { ShortcutsDialog } from './components/ShortcutsDialog';
 import { ConfirmDialog, ContextMenu } from './components/controls';
 import { Logo } from './components/Logo';
-import { tSync } from './i18n';
+import { tSync, useT } from './i18n';
+import { APP_VERSION, fetchLatestVersion, isNewer, openReleasesPage, triggerUpdate } from './update';
+
+/** Açılışta yeni sürüm varsa üstte banner: Güncelle → tepsi EXE'sine komut. */
+function UpdateBanner() {
+  const t = useT();
+  const [surum, setSurum] = useState<string | null>(null);
+  const [durum, setDurum] = useState<'idle' | 'uygulaniyor' | 'hata'>('idle');
+  const [kapali, setKapali] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    const tm = setTimeout(async () => {
+      const v = await fetchLatestVersion();
+      if (alive && v && isNewer(v, APP_VERSION)) setSurum(v);
+    }, 2500);
+    return () => {
+      alive = false;
+      clearTimeout(tm);
+    };
+  }, []);
+
+  if (!surum || kapali) return null;
+
+  const guncelle = async () => {
+    setDurum('uygulaniyor');
+    const ok = await triggerUpdate();
+    if (!ok) {
+      openReleasesPage();
+      setDurum('hata');
+      return;
+    }
+    setTimeout(() => window.location.reload(), 35000);
+  };
+
+  return (
+    <div className="update-banner">
+      {durum === 'idle' && (
+        <>
+          <span>{t('update.available').replace('{v}', surum)}</span>
+          <button className="btn slim accent" onClick={() => void guncelle()}>
+            {t('update.install')}
+          </button>
+          <button className="icon-btn mini" aria-label={t('confirm.cancel')} onClick={() => setKapali(true)}>
+            ✕
+          </button>
+        </>
+      )}
+      {durum === 'uygulaniyor' && <span>{t('update.updating')}</span>}
+      {durum === 'hata' && <span>{t('update.failed')}</span>}
+    </div>
+  );
+}
 
 function Splash() {
   return (
@@ -366,6 +418,7 @@ export default function App() {
 
   return (
     <div className={mobile ? 'app m-root' : 'app'} onContextMenu={buildContextMenu}>
+      <UpdateBanner />
       {mobile ? (
         <MobileApp />
       ) : (

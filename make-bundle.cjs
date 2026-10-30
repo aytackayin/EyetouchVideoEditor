@@ -10,6 +10,7 @@ const SRC = path.join(ROOT, 'appsrc');
 const ORDER = [
   'types/index.ts',
   'utils/index.ts',
+  'update.ts',
   'i18n/tr.ts',
   'i18n/en.ts',
   'i18n/index.ts',

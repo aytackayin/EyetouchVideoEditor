@@ -373,6 +373,8 @@ input[type='color'] { width: 34px; height: 24px; padding: 1px 2px; border: 1px s
 .about-link { color: var(--accent); text-decoration: none; font-family: var(--font-mono); font-size: 12.5px; user-select: text; }
 .about-link:hover { text-decoration: underline; }
 
+.update-banner { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); z-index: 400; display: flex; align-items: center; gap: 10px; background: var(--bg-elevated); border: 1px solid var(--accent); border-radius: 20px; padding: 6px 14px; font-size: 12px; color: var(--text-1); box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+
 /* --- Mobil arayüz (telefon / dikey tablet) --- */
 .app.m-root { grid-template-rows: minmax(0, 1fr); height: 100dvh; }
 .m-app { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; height: 100%; min-height: 0; }

@@ -104,6 +104,7 @@ namespace EyetouchTray
         private Thread _acceptThread;
         private int _port;
         private Icon _icon;
+        private System.Threading.SynchronizationContext _ui;
         private MenuItem _miRun, _miRestart, _miUpdate, _miRemote, _miLangTr, _miLangEn, _miQuit;
 
         private static readonly Dictionary<string, string> Mime = new Dictionary<string, string>
@@ -135,6 +136,14 @@ namespace EyetouchTray
         public TrayContext()
         {
             Settings.Load();
+            _ui = System.Threading.SynchronizationContext.Current;
+            // önceki güncellemeden kalan eski exe'yi temizle
+            try
+            {
+                string old = Path.Combine(AppDir, "Eyetouch.old.exe");
+                if (File.Exists(old)) File.Delete(old);
+            }
+            catch { }
             BuildIcon();
             _tray = new NotifyIcon();
             _tray.Icon = _icon;
@@ -342,6 +351,23 @@ namespace EyetouchTray
                 // sorgu kısmını at, %XX çöz
                 string rel = rawPath.Split('?')[0];
                 rel = UrlDecode(rel);
+                // Uygulama→tepsi köprüsü: web arayüzü güncellemeyi tetikleyebilir
+                if (rel == "/eyetouch/ping")
+                {
+                    SendSimple(s, "200 OK", "application/json", Encoding.UTF8.GetBytes("{\"ok\":true}"));
+                    return;
+                }
+                if (rel == "/eyetouch/update")
+                {
+                    SendSimple(s, "200 OK", "application/json",
+                        Encoding.UTF8.GetBytes("{\"ok\":true,\"triggered\":true}"));
+                    System.Threading.SynchronizationContext ctx = _ui;
+                    if (ctx != null)
+                    {
+                        ctx.Post(delegate { RunUpdate(); }, null);
+                    }
+                    return;
+                }
                 if (rel == "/") rel = "/index.html";
                 string distRoot = Path.GetFullPath(Path.Combine(AppDir, "dist"));
                 string file = Path.GetFullPath(Path.Combine(distRoot,
@@ -482,6 +508,21 @@ namespace EyetouchTray
                 StopServer();
                 Thread.Sleep(200);
                 CopyAll(src, AppDir);
+                // kendi exe'sini de güncelle: çalışan dosyayı yeniden adlandır (Windows
+                // izin verir), yenisini kopyala; eski ad bir sonrki açılışta silinir
+                string newExe = Path.Combine(src, "Eyetouch.exe");
+                if (File.Exists(newExe))
+                {
+                    try
+                    {
+                        string cur = System.Reflection.Assembly.GetExecutingAssembly().Location;
+                        string oldExe = Path.Combine(AppDir, "Eyetouch.old.exe");
+                        if (File.Exists(oldExe)) File.Delete(oldExe);
+                        File.Move(cur, oldExe);
+                        File.Copy(newExe, cur, true);
+                    }
+                    catch { }
+                }
                 ok = true;
                 msg = Settings.T("Güncellendi. Sunucu yeniden başlatılıyor…",
                                  "Updated. Restarting server…");
