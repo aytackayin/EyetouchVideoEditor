@@ -462,7 +462,7 @@ function SplitButton() {
 }
 
 /** --- Ana panel --- */
-export function TimelinePanel() {
+export function TimelinePanel({ fill }: { fill?: boolean }) {
   const t = useT();
   const timelineHeight = useUiStore((s) => s.timelineHeight);
   const snap = useUiStore((s) => s.snap);
@@ -771,7 +771,7 @@ export function TimelinePanel() {
   return (
     <>
       <TimelineDivider />
-      <section className="panel timeline" style={{ height: timelineHeight }} aria-label={t('timeline.title')}>
+      <section className="panel timeline" style={fill ? { height: '100%' } : { height: timelineHeight }} aria-label={t('timeline.title')}>
         <div className="panel-header">
           <span className="panel-title">{t('timeline.title')}</span>
           <div className="spacer" />

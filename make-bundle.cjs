@@ -31,6 +31,7 @@ const ORDER = [
   'components/TransformOverlay.tsx',
   'components/Inspector.tsx',
   'components/TimelinePanel.tsx',
+  'components/MobileApp.tsx',
   'components/SettingsModal.tsx',
   'components/ShortcutsDialog.tsx',
   'components/ExportDialog.tsx',

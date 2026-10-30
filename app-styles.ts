@@ -373,6 +373,40 @@ input[type='color'] { width: 34px; height: 24px; padding: 1px 2px; border: 1px s
 .about-link { color: var(--accent); text-decoration: none; font-family: var(--font-mono); font-size: 12.5px; user-select: text; }
 .about-link:hover { text-decoration: underline; }
 
+/* --- Mobil arayüz (telefon / dikey tablet) --- */
+.app.m-root { grid-template-rows: minmax(0, 1fr); height: 100dvh; }
+.m-app { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; height: 100%; min-height: 0; }
+.m-header { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--bg-panel); border-bottom: 1px solid var(--border); }
+.m-header .spacer { flex: 1; }
+.m-content { min-height: 0; display: flex; }
+.m-content > .panel { flex: 1; min-width: 0; }
+.m-tabbar { display: flex; gap: 4px; background: var(--bg-panel); border-top: 1px solid var(--border); padding: 4px 6px calc(4px + env(safe-area-inset-bottom, 0px)); }
+.m-tab { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 7px 2px; border-radius: var(--radius-sm); color: var(--text-3); font-size: 10px; min-height: 52px; justify-content: center; }
+.m-tab.active { color: var(--accent); background: var(--accent-soft); }
+.m-root .panel-header { flex-wrap: wrap; height: auto; min-height: 34px; padding: 4px 8px; row-gap: 4px; }
+.m-root .icon-btn { min-width: 38px; min-height: 38px; }
+.m-root .icon-btn.mini { min-width: 30px; min-height: 30px; }
+.m-root .icon-btn.wide { padding: 0 6px; }
+.m-root .transport { flex-wrap: wrap; height: auto; padding: 6px 8px; row-gap: 6px; }
+.m-root .timeline-divider { display: none; }
+.m-root .media-divider { display: none; }
+.m-root .media-drop { grid-template-columns: repeat(3, 1fr); }
+.m-root .insp-row { gap: 6px; }
+.m-root .insp-label { width: 76px; }
+.m-root .tl-header { padding: 0 6px 0 2px; }
+.m-root .tl-headers .tl-header { flex-wrap: wrap; height: auto; min-height: 40px; }
+.m-root .cwheels-row { flex-wrap: wrap; }
+.m-root .dialog { width: calc(100vw - 24px); }
+.m-root .export-twin { grid-template-columns: 1fr; }
+.m-root .container-grid { grid-template-columns: repeat(2, 1fr); }
+.m-root .container-grid.codec-grid { grid-template-columns: repeat(2, 1fr); }
+/* dokunma: sürükleme yüzeyleri sayfa kaydırmasın */
+.tl-clip, .tl-ruler, .tf-box, .tf-handle, .tf-rotate-zone, .cwheel-pad, .tl-grip, .tl-trim-handle { touch-action: none; }
+.m-root .tf-handle { width: 18px; height: 18px; }
+.m-root .tf-rotate-zone { width: 30px; height: 30px; }
+.m-root .tl-trim-handle { width: 24px; }
+.m-root .insp-value { width: 46px; }
+
 /* --- Açık tema: zaman çizgisi parçaları --- */
 [data-theme='light'] .tl-lane { background: repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.03) 0 1px, transparent 1px 100%), var(--bg-panel-2); background-size: 24px 100%; }
 [data-theme='light'] .tl-lane.audio { background: repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.025) 0 1px, transparent 1px 100%), #edf2ee; background-size: 24px 100%; }

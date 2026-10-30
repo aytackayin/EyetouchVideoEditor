@@ -8,6 +8,7 @@ import { MediaBin } from './components/MediaBin';
 import { PreviewPanel } from './components/PreviewPanel';
 import { Inspector } from './components/Inspector';
 import { TimelinePanel } from './components/TimelinePanel';
+import { MobileApp } from './components/MobileApp';
 import { SettingsModal } from './components/SettingsModal';
 import { ExportDialog } from './components/ExportDialog';
 import { ShortcutsDialog } from './components/ShortcutsDialog';
@@ -308,6 +309,18 @@ function MediaBinDivider() {
   return <div className="media-divider" onPointerDown={onPointerDown} role="separator" aria-orientation="vertical" />;
 }
 
+/** Telefondan mı açıldı (<=820px genişlik) — mobil kabuk kullanılır. */
+function useIsMobile() {
+  const [mobile, setMobile] = useState(() => window.matchMedia('(max-width: 820px)').matches);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 820px)');
+    const on = () => setMobile(mq.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
+  return mobile;
+}
+
 export default function App() {
   const [booted, setBooted] = useState(false);
   const settingsOpen = useUiStore((s) => s.settingsOpen);
@@ -315,6 +328,7 @@ export default function App() {
   const shortcutsOpen = useUiStore((s) => s.shortcutsOpen);
   const confirmDlg = useUiStore((s) => s.confirmDlg);
   const mediaBinWidth = useUiStore((s) => s.mediaBinWidth);
+  const mobile = useIsMobile();
 
   useEffect(() => {
     let alive = true;
@@ -351,18 +365,24 @@ export default function App() {
   if (!booted) return <Splash />;
 
   return (
-    <div className="app" onContextMenu={buildContextMenu}>
-      <TopBar />
-      <div
-        className="main"
-        style={{ '--media-w': `${mediaBinWidth}px` } as React.CSSProperties}
-      >
-        <MediaBin />
-        <MediaBinDivider />
-        <PreviewPanel />
-        <Inspector />
-      </div>
-      <TimelinePanel />
+    <div className={mobile ? 'app m-root' : 'app'} onContextMenu={buildContextMenu}>
+      {mobile ? (
+        <MobileApp />
+      ) : (
+        <>
+          <TopBar />
+          <div
+            className="main"
+            style={{ '--media-w': `${mediaBinWidth}px` } as React.CSSProperties}
+          >
+            <MediaBin />
+            <MediaBinDivider />
+            <PreviewPanel />
+            <Inspector />
+          </div>
+          <TimelinePanel />
+        </>
+      )}
       {settingsOpen && <SettingsModal />}
       {exportOpen && <ExportDialog />}
       {shortcutsOpen && <ShortcutsDialog />}

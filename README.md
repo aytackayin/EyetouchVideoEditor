@@ -2,6 +2,10 @@
 
 ![Eyetouch Video Editor arayüzü](preview.png)
 
+Telefon/tablet:
+
+![Mobil arayüz](preview-mobile.png)
+
 **Sürüm 1.0.0** · Windows · [GitHub](https://github.com/aytackayin)
 
 Tarayıcıda çalışan, **tamamen yerel** ve ücretsiz video düzenleyici. Medyalarınız hiçbir sunucuya yüklenmez — kırpma, hızlandırma, keyframe animasyonları, yeşil perde, LUT, maskeleme ve dışa aktarma dahil her şey cihazınızda gerçekleşir.
