@@ -24,6 +24,14 @@ A **fully local, free, in-browser video editor**. Your media never leaves your d
 - 🌙 Açık/Koyu/Sistem teması, Türkçe/İngilizce arayüz, sağ tık menüleri, klavye kısayolları
 - 💾 Her şey otomatik kaydedilir (IndexedDB) — sekmeyi kapatsanız bile
 
+## Uzaktan erişim (Tailscale) / Remote access
+
+Sistem tepsi menüsündeki **Uzaktan erişim (Tailscale/Ağ)** anahtarını açın; balonda Tailscale adresi görünür (ör. ). Aynı tailnet'teki herhangi bir cihazın tarayıcısından bu adresi açarak uygulamayı kullanabilirsiniz. İlk açışta Windows Güvenlik Duvarı izni isteyebilir — **İzin ver** deyin.
+
+Enable **Remote access (Tailscale/LAN)** in the tray menu; the balloon shows your Tailscale URL (e.g. ). Open it from any device on your tailnet. Allow access if Windows Firewall asks on first connect.
+
+> Not: Projeler ve medya her tarayıcının kendi yerel deposunda tutulur — uzaktaki cihaz kendi ayrı çalışma alanını görür. Cihazlar arasında proje taşımak için  kaydet/aç kullanın.
+
 ## Kurulum / Install
 
 ### Kullanıcılar için (Windows)

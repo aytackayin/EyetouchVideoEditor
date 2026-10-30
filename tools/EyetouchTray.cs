@@ -1,7 +1,8 @@
 // Eyetouch Video Editor — Sistem Tepsi Başlatıcısı (taşınabilir, node gerekmez)
 // Derleme: build-tray.bat (csc, .NET Framework yerleşik) veya tools/build.rsp
-// Özellikler: gömülü HTTP sunucu (dist/), tepsi ikonu, Çalıştır/Yeniden Başlat/
-// Güncelle/Çık menüsü, TR/EN dil, tek kopya koruması. Hiçbir kurulum gerektirmez.
+// Özellikler: gömülü TCP HTTP sunucu (dist/), tepsi ikonu, Çalıştır/Yeniden
+// Başlat/Güncelle/Çık + Uzaktan erişim (Tailscale/LAN) anahtarı, TR/EN dil,
+// tek kopya koruması. Hiçbir kurulum/yönetici hakkı gerektirmez.
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -10,6 +11,8 @@ using System.Drawing.Drawing2D;
 using System.IO;
 using System.Net;
 using System.Net.Security;
+using System.Net.Sockets;
+using System.Text;
 using System.Threading;
 using System.Windows.Forms;
 
@@ -26,7 +29,7 @@ namespace EyetouchTray
                 if (!createdNew)
                 {
                     MessageBox.Show(
-                        Lang.T("Eyetouch zaten çalışıyor.", "Eyetouch is already running."),
+                        Settings.T("Eyetouch zaten çalışıyor.", "Eyetouch is already running."),
                         "Eyetouch", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     return;
                 }
@@ -37,37 +40,58 @@ namespace EyetouchTray
         }
     }
 
-    static class Lang
+    // Ayarlar: %LOCALAPPDATA%\EyoutuchEditor yerine EyetouchEditor\settings.txt
+    static class Settings
     {
-        public static string Current = "tr";
-        public static string T(string tr, string en)
+        public static string Lang = "tr";
+        public static bool Remote = false;
+        public static string T(string tr, string en) { return Lang == "en" ? en : tr; }
+
+        private static string Path_()
         {
-            return Current == "en" ? en : tr;
+            return Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "EyetouchEditor", "settings.txt");
         }
-        public static void Save()
-        {
-            try
-            {
-                string dir = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "EyetouchEditor");
-                Directory.CreateDirectory(dir);
-                File.WriteAllText(Path.Combine(dir, "lang.txt"), Current);
-            }
-            catch { }
-        }
+
         public static void Load()
         {
             try
             {
-                string p = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "EyetouchEditor", "lang.txt");
+                string p = Path_();
                 if (File.Exists(p))
                 {
-                    string v = File.ReadAllText(p).Trim().ToLowerInvariant();
-                    if (v == "en" || v == "tr") Current = v;
+                    foreach (string line in File.ReadAllLines(p))
+                    {
+                        string[] kv = line.Split(new char[] { '=' }, 2);
+                        if (kv.Length != 2) continue;
+                        if (kv[0] == "lang" && (kv[1] == "tr" || kv[1] == "en")) Lang = kv[1];
+                        if (kv[0] == "remote" && kv[1] == "1") Remote = true;
+                    }
                 }
+                else
+                {
+                    // eski sürümün lang.txt'si
+                    string eski = Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                        "EyoutuchEditor".Replace("Eyoutuch", "Eyetouch"), "lang.txt");
+                    if (File.Exists(eski))
+                    {
+                        string v = File.ReadAllText(eski).Trim().ToLowerInvariant();
+                        if (v == "en" || v == "tr") Lang = v;
+                    }
+                }
+            }
+            catch { }
+        }
+
+        public static void Save()
+        {
+            try
+            {
+                string dir = Path.GetDirectoryName(Path_());
+                Directory.CreateDirectory(dir);
+                File.WriteAllText(Path_(), "lang=" + Lang + "\r\nremote=" + (Remote ? "1" : "0") + "\r\n");
             }
             catch { }
         }
@@ -76,11 +100,11 @@ namespace EyetouchTray
     sealed class TrayContext : ApplicationContext
     {
         private NotifyIcon _tray;
-        private HttpListener _http;
-        private Thread _httpThread;
+        private TcpListener _tcp;
+        private Thread _acceptThread;
         private int _port;
         private Icon _icon;
-        private MenuItem _miRun, _miRestart, _miUpdate, _miLangTr, _miLangEn, _miQuit;
+        private MenuItem _miRun, _miRestart, _miUpdate, _miRemote, _miLangTr, _miLangEn, _miQuit;
 
         private static readonly Dictionary<string, string> Mime = new Dictionary<string, string>
         {
@@ -110,7 +134,7 @@ namespace EyetouchTray
 
         public TrayContext()
         {
-            Lang.Load();
+            Settings.Load();
             BuildIcon();
             _tray = new NotifyIcon();
             _tray.Icon = _icon;
@@ -163,6 +187,7 @@ namespace EyetouchTray
             _miRun = new MenuItem("", delegate { StartServer(); });
             _miRestart = new MenuItem("", delegate { RestartServer(); });
             _miUpdate = new MenuItem("", delegate { RunUpdate(); });
+            _miRemote = new MenuItem("", delegate { ToggleRemote(); });
             MenuItem sep1 = new MenuItem("-");
             _miLangTr = new MenuItem("Türkçe", delegate { SetLang("tr"); });
             _miLangEn = new MenuItem("English", delegate { SetLang("en"); });
@@ -171,109 +196,218 @@ namespace EyetouchTray
             RefreshTexts();
             return new ContextMenu(new MenuItem[]
             {
-                _miRun, _miRestart, _miUpdate, sep1,
-                new MenuItem(Lang.T("Dil", "Language"), new MenuItem[] { _miLangTr, _miLangEn }),
+                _miRun, _miRestart, _miUpdate, sep1, _miRemote,
+                new MenuItem(Settings.T("Dil", "Language"), new MenuItem[] { _miLangTr, _miLangEn }),
                 sep2, _miQuit
             });
         }
 
         private void RefreshTexts()
         {
-            _miRun.Text = Lang.T("Çalıştır", "Run");
-            _miRestart.Text = Lang.T("Yeniden Başlat", "Restart");
-            _miUpdate.Text = Lang.T("Güncelle…", "Check for Updates…");
-            _miQuit.Text = Lang.T("Çık", "Quit");
-            _miLangTr.Checked = Lang.Current == "tr";
-            _miLangEn.Checked = Lang.Current == "en";
+            _miRun.Text = Settings.T("Çalıştır", "Run");
+            _miRestart.Text = Settings.T("Yeniden Başlat", "Restart");
+            _miUpdate.Text = Settings.T("Güncelle…", "Check for Updates…");
+            _miRemote.Text = Settings.T("Uzaktan erişim (Tailscale/Ağ)", "Remote access (Tailscale/LAN)");
+            _miQuit.Text = Settings.T("Çık", "Quit");
+            _miRemote.Checked = Settings.Remote;
+            _miLangTr.Checked = Settings.Lang == "tr";
+            _miLangEn.Checked = Settings.Lang == "en";
         }
 
         private void SetLang(string l)
         {
-            Lang.Current = l;
-            Lang.Save();
+            Settings.Lang = l;
+            Settings.Save();
             RefreshTexts();
         }
 
-        // ---- Gömülü HTTP sunucu (node gerekmez) ----
+        private void ToggleRemote()
+        {
+            Settings.Remote = !Settings.Remote;
+            Settings.Save();
+            RefreshTexts();
+            RestartServer();
+        }
+
+        // ---- Gömülü TCP HTTP sunucu (http.sys/URLACL/yönetici gerekmez) ----
+
+        /** Tailscale adresi (100.64.0.0/10 aralığı) — yoksa null. */
+        private static string TailscaleIp()
+        {
+            try
+            {
+                foreach (System.Net.NetworkInformation.NetworkInterface ni in
+                    System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+                {
+                    foreach (System.Net.NetworkInformation.UnicastIPAddressInformation a in
+                        ni.GetIPProperties().UnicastAddresses)
+                    {
+                        if (a.Address.AddressFamily != AddressFamily.InterNetwork) continue;
+                        byte[] b = a.Address.GetAddressBytes();
+                        if (b[0] == 100 && b[1] >= 64 && b[1] <= 127) return a.Address.ToString();
+                    }
+                }
+            }
+            catch { }
+            return null;
+        }
+
         private void StartServer()
         {
-            if (_http != null && _http.IsListening)
+            if (_tcp != null)
             {
                 OpenApp();
                 return;
             }
+            IPAddress bind = Settings.Remote ? IPAddress.Any : IPAddress.Loopback;
             for (int port = 5173; port <= 5182; port++)
             {
                 try
                 {
-                    HttpListener l = new HttpListener();
-                    l.Prefixes.Add("http://localhost:" + port + "/");
-                    l.Start();
-                    _http = l;
+                    TcpListener l = new TcpListener(bind, port);
+                    l.Start(8);
+                    _tcp = l;
                     _port = port;
                     break;
                 }
                 catch
                 {
-                    _http = null;
+                    _tcp = null;
                 }
             }
-            if (_http == null)
+            if (_tcp == null)
             {
                 _tray.ShowBalloonTip(5000, "Eyetouch",
-                    Lang.T("Sunucu başlatılamadı (5173-5182 meşgul).",
-                           "Could not start server (5173-5182 busy)."), ToolTipIcon.Error);
+                    Settings.T("Sunucu başlatılamadı (5173-5182 meşgul).",
+                               "Could not start server (5173-5182 busy)."), ToolTipIcon.Error);
                 return;
             }
-            _httpThread = new Thread(HttpLoop);
-            _httpThread.IsBackground = true;
-            _httpThread.Start();
-            _tray.ShowBalloonTip(2500, "Eyetouch", "http://localhost:" + _port, ToolTipIcon.Info);
+            _acceptThread = new Thread(AcceptLoop);
+            _acceptThread.IsBackground = true;
+            _acceptThread.Start();
+
+            string msg = "http://localhost:" + _port;
+            if (Settings.Remote)
+            {
+                string ts = TailscaleIp();
+                if (ts != null) msg += Settings.T("\nTailscale: http://", "\nTailscale: http://") + ts + ":" + _port;
+                else msg += Settings.T("\n(Tailscale ağı bulunamadı — yerel IP kullanın)", "\n(No Tailscale network found — use your LAN IP)");
+                msg += Settings.T("\nİlk bağlantıda Güvenlik Duvarı'na izin verin.", "\nAllow access in Windows Firewall on first connect.");
+            }
+            _tray.ShowBalloonTip(4000, "Eyetouch", msg, ToolTipIcon.Info);
             OpenApp();
         }
 
-        private void HttpLoop()
+        private void AcceptLoop()
         {
-            while (_http != null && _http.IsListening)
+            while (_tcp != null)
             {
-                HttpListenerContext ctx;
-                try { ctx = _http.GetContext(); }
+                Socket s;
+                try { s = _tcp.AcceptSocket(); }
                 catch { break; }
-                try { Serve(ctx); }
-                catch { }
+                try { ThreadPool.QueueUserWorkItem(HandleClient, s); }
+                catch { try { s.Close(); } catch { } }
             }
         }
 
-        private void Serve(HttpListenerContext ctx)
+        private void HandleClient(object state)
         {
-            string distRoot = Path.GetFullPath(Path.Combine(AppDir, "dist"));
-            string rel = Uri.UnescapeDataString(ctx.Request.Url.AbsolutePath);
-            if (rel == "/") rel = "/index.html";
-            string file = Path.GetFullPath(Path.Combine(distRoot, rel.TrimStart('/').Replace('/', '\\')));
-            bool exists = File.Exists(file);
-            if (!exists || file != distRoot && !file.StartsWith(distRoot + Path.DirectorySeparatorChar.ToString(), StringComparison.OrdinalIgnoreCase))
+            Socket s = (Socket)state;
+            try
             {
-                // SPA geri dönüşü
-                file = Path.Combine(distRoot, "index.html");
+                s.ReceiveTimeout = 10000;
+                s.SendTimeout = 30000;
+                // istek başlıklarını oku (\r\n\r\n kadar)
+                MemoryStream ms = new MemoryStream();
+                byte[] buf = new byte[8192];
+                string head = "";
+                while (ms.Length < 65536)
+                {
+                    int n = s.Receive(buf);
+                    if (n <= 0) break;
+                    ms.Write(buf, 0, n);
+                    head = Encoding.ASCII.GetString(ms.ToArray());
+                    if (head.Contains("\r\n\r\n")) break;
+                }
+                if (head.Length == 0) return;
+                string[] ilk = head.Split(' ');
+                if (ilk.Length < 2) return;
+                string method = ilk[0];
+                string rawPath = ilk[1];
+                if (method != "GET" && method != "HEAD")
+                {
+                    SendSimple(s, "405 Method Not Allowed", "text/plain", new byte[0]);
+                    return;
+                }
+                // sorgu kısmını at, %XX çöz
+                string rel = rawPath.Split('?')[0];
+                rel = UrlDecode(rel);
+                if (rel == "/") rel = "/index.html";
+                string distRoot = Path.GetFullPath(Path.Combine(AppDir, "dist"));
+                string file = Path.GetFullPath(Path.Combine(distRoot,
+                    rel.TrimStart('/').Replace('/', Path.DirectorySeparatorChar)));
+                bool ok = file == distRoot ||
+                          file.StartsWith(distRoot + Path.DirectorySeparatorChar.ToString(), StringComparison.OrdinalIgnoreCase);
+                if (!ok || !File.Exists(file))
+                {
+                    file = Path.Combine(distRoot, "index.html"); // SPA geri dönüşü
+                }
+                if (!File.Exists(file))
+                {
+                    SendSimple(s, "404 Not Found", "text/plain; charset=utf-8", new byte[0]);
+                    return;
+                }
+                byte[] data = File.ReadAllBytes(file);
+                string ext = Path.GetExtension(file).ToLowerInvariant();
+                string mime;
+                if (!Mime.TryGetValue(ext, out mime)) mime = "application/octet-stream";
+                StringBuilder h = new StringBuilder();
+                h.Append("HTTP/1.1 200 OK\r\nContent-Type: ").Append(mime)
+                 .Append("\r\nContent-Length: ").Append(data.Length)
+                 .Append("\r\nCross-Origin-Opener-Policy: same-origin")
+                 .Append("\r\nCross-Origin-Embedder-Policy: require-corp")
+                 .Append("\r\nCache-Control: ").Append(ext == ".html" ? "no-store" : "max-age=3600")
+                 .Append("\r\nConnection: close\r\n\r\n");
+                byte[] hb = Encoding.ASCII.GetBytes(h.ToString());
+                s.Send(hb);
+                if (method == "GET") s.Send(data);
             }
-            if (!File.Exists(file))
+            catch { }
+            finally
             {
-                ctx.Response.StatusCode = 404;
-                ctx.Response.Close();
-                return;
+                try { s.Close(); } catch { }
             }
-            byte[] data = File.ReadAllBytes(file);
-            string ext = Path.GetExtension(file).ToLowerInvariant();
-            string mime;
-            if (!Mime.TryGetValue(ext, out mime)) mime = "application/octet-stream";
-            ctx.Response.ContentType = mime;
-            ctx.Response.ContentLength64 = data.Length;
-            // ffmpeg.wasm (SharedArrayBuffer) için zorunlu başlıklar
-            ctx.Response.AddHeader("Cross-Origin-Opener-Policy", "same-origin");
-            ctx.Response.AddHeader("Cross-Origin-Embedder-Policy", "require-corp");
-            if (ext == ".html") ctx.Response.AddHeader("Cache-Control", "no-store");
-            ctx.Response.OutputStream.Write(data, 0, data.Length);
-            ctx.Response.Close();
+        }
+
+        private static void SendSimple(Socket s, string status, string mime, byte[] body)
+        {
+            string h = "HTTP/1.1 " + status + "\r\nContent-Type: " + mime +
+                       "\r\nContent-Length: " + body.Length + "\r\nConnection: close\r\n\r\n";
+            byte[] hb = Encoding.ASCII.GetBytes(h);
+            s.Send(hb);
+            if (body.Length > 0) s.Send(body);
+        }
+
+        private static string UrlDecode(string s)
+        {
+            s = s.Replace("+", " ");
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < s.Length; i++)
+            {
+                if (s[i] == '%' && i + 2 < s.Length)
+                {
+                    int v;
+                    if (int.TryParse(s.Substring(i + 1, 2),
+                        System.Globalization.NumberStyles.HexNumber, null, out v))
+                    {
+                        sb.Append((char)v);
+                        i += 2;
+                        continue;
+                    }
+                }
+                sb.Append(s[i]);
+            }
+            return sb.ToString();
         }
 
         private void OpenApp()
@@ -288,8 +422,8 @@ namespace EyetouchTray
 
         private void StopServer()
         {
-            try { if (_http != null && _http.IsListening) _http.Stop(); } catch { }
-            _http = null;
+            try { if (_tcp != null) _tcp.Stop(); } catch { }
+            _tcp = null;
             _port = 0;
         }
 
@@ -300,7 +434,7 @@ namespace EyetouchTray
             StartServer();
         }
 
-        // ---- Güncelleme: GitHub release zip'ini indir, aç, exe haricinde üstüne kopyala ----
+        // ---- Güncelleme ----
         private const string UpdateUrl =
             "https://github.com/aytackayin/EyetouchVideoEditor/releases/latest/download/EyetouchVideoEditor.zip";
 
@@ -308,7 +442,7 @@ namespace EyetouchTray
         {
             _miUpdate.Enabled = false;
             _tray.ShowBalloonTip(2000, "Eyetouch",
-                Lang.T("Güncellemeler denetleniyor…", "Checking for updates…"), ToolTipIcon.Info);
+                Settings.T("Güncellemeler denetleniyor…", "Checking for updates…"), ToolTipIcon.Info);
             Thread t = new Thread(UpdateWorker);
             t.IsBackground = true;
             t.Start();
@@ -343,23 +477,23 @@ namespace EyetouchTray
                 if (!File.Exists(Path.Combine(src, "server.cjs")) &&
                     !Directory.Exists(Path.Combine(src, "dist")))
                 {
-                    throw new Exception(Lang.T("paket içeriği tanınamadı", "unrecognized package"));
+                    throw new Exception(Settings.T("paket içeriği tanınamadı", "unrecognized package"));
                 }
                 StopServer();
                 Thread.Sleep(200);
                 CopyAll(src, AppDir);
                 ok = true;
-                msg = Lang.T("Güncellendi. Sunucu yeniden başlatılıyor…",
-                             "Updated. Restarting server…");
+                msg = Settings.T("Güncellendi. Sunucu yeniden başlatılıyor…",
+                                 "Updated. Restarting server…");
             }
             catch (WebException)
             {
-                msg = Lang.T("Güncelleme bulunamadı (release henüz yok olabilir).",
-                             "No update found (release may not exist yet).");
+                msg = Settings.T("Güncelleme bulunamadı (release henüz yok olabilir).",
+                                 "No update found (release may not exist yet).");
             }
             catch (Exception ex)
             {
-                msg = Lang.T("Güncelleme hatası: ", "Update failed: ") + ex.Message;
+                msg = Settings.T("Güncelleme hatası: ", "Update failed: ") + ex.Message;
             }
             try
             {
@@ -375,7 +509,7 @@ namespace EyetouchTray
             foreach (string f in Directory.GetFiles(src))
             {
                 string name = Path.GetFileName(f);
-                if (name.ToLowerInvariant().EndsWith(".exe")) continue;   // çalışan exe değişmez
+                if (name.ToLowerInvariant().EndsWith(".exe")) continue;
                 File.Copy(f, Path.Combine(dst, name), true);
             }
             foreach (string d in Directory.GetDirectories(src))
