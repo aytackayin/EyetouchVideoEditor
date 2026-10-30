@@ -1,0 +1,9 @@
+/nologo
+/target:winexe
+/out:Eyetouch.exe
+/optimize+
+/win32icon:Eyetouch.ico
+/r:System.dll
+/r:System.Drawing.dll
+/r:System.Windows.Forms.dll
+tools\EyetouchTray.cs

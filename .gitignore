@@ -1,0 +1,12 @@
+node_modules/
+dist/
+ornek-medya/
+__probe/
+.zcode/
+src/
+*.zip
+*.old
+Eyetouch.exe
+main.tsx
+patch2.cjs
+patch3.cjs
