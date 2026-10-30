@@ -343,15 +343,11 @@ namespace EyetouchTray
                 if (ilk.Length < 2) return;
                 string method = ilk[0];
                 string rawPath = ilk[1];
-                if (method != "GET" && method != "HEAD")
-                {
-                    SendSimple(s, "405 Method Not Allowed", "text/plain", new byte[0]);
-                    return;
-                }
                 // sorgu kısmını at, %XX çöz
                 string rel = rawPath.Split('?')[0];
                 rel = UrlDecode(rel);
                 // Uygulama→tepsi köprüsü: web arayüzü güncellemeyi tetikleyebilir
+                // (metot kapısından ÖNCE — POST da kabul edilir)
                 if (rel == "/eyetouch/ping")
                 {
                     SendSimple(s, "200 OK", "application/json", Encoding.UTF8.GetBytes("{\"ok\":true}"));
@@ -366,6 +362,11 @@ namespace EyetouchTray
                     {
                         ctx.Post(delegate { RunUpdate(); }, null);
                     }
+                    return;
+                }
+                if (method != "GET" && method != "HEAD")
+                {
+                    SendSimple(s, "405 Method Not Allowed", "text/plain", new byte[0]);
                     return;
                 }
                 if (rel == "/") rel = "/index.html";
